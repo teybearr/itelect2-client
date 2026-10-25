@@ -1,32 +1,97 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import TaskList from "./components/TaskList.jsx";
 import TaskForm from "./components/TaskForm.jsx";
+import LoginForm from "./components/LoginForm.jsx";
 import "./App.css";
 
-const STARTING_TASKS = [
-  { id: 1, title: "Complete GT13 Activity", dueDate: "2026-10-21" },
-  { id: 2, title: "Review for Midterm Exams", dueDate: "2026-10-25" },
-  { id: 3, title: "Edit Trailer Video", dueDate: "2026-10-28" },
-];
+const API_URL = import.meta.env.VITE_API_URL;
+
+async function fetchTasks() {
+  const res = await fetch(`${API_URL}/api/tasks`);
+  if (!res.ok) {
+    throw new Error(`GET /api/tasks answered ${res.status}`);
+  }
+  return res.json();
+}
 
 function App() {
-  const addTask = (title) => {
-    const newTask = { 
-      id: Date.now(), 
-      title: title, 
-      dueDate: null 
+  const [tasks, setTasks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [token, setToken] = useState("");
+  const [loggedInAs, setLoggedInAs] = useState("");
+
+  useEffect(() => {
+    const loadTasks = async () => {
+      try {
+        const data = await fetchTasks();
+        setTasks(data);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
     };
-    setTasks([...tasks, newTask]);
+    loadTasks();
+  }, []);
+
+  const logIn = async (email, password) => {
+    const res = await fetch(`${API_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error);
+    }
+    setToken(data.token);
+    setLoggedInAs(email);
   };
 
-  const [tasks, setTasks] = useState(STARTING_TASKS);
+  const logOut = () => {
+    setToken("");
+    setLoggedInAs("");
+  };
+
+  const addTask = async (title) => {
+    const res = await fetch(`${API_URL}/api/tasks`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ title }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error);
+    }
+    setTasks(await fetchTasks());
+  };
 
   return (
     <main>
       <h1>Task Manager</h1>
-      <p>{tasks.length} tasks listed</p>
-      <TaskForm onAdd={addTask} />
-      <TaskList tasks={tasks} />
+      {token ? (
+        <p>
+          Logged in as {loggedInAs} <button onClick={logOut}>Log out</button>
+        </p>
+      ) : (
+        <LoginForm onLogin={logIn} />
+      )}
+
+      {token && <TaskForm onAdd={addTask} />}
+
+      {loading && <p>Loading...</p>}
+      {error && <p>Could not load the tasks: {error}</p>}
+
+      {!loading && !error && (
+        <>
+          <p>{tasks.length} tasks listed</p>
+          <TaskList tasks={tasks} />
+        </>
+      )}
     </main>
   );
 }
